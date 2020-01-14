@@ -558,9 +558,21 @@ func (l *levelIter) skipEmptyFileBackward() (*InternalKey, []byte) {
 				l.smallestBoundary = &l.syntheticBoundary
 				return l.smallestBoundary, nil
 			}
-			// If the boundary is a range deletion tombstone, return that key.
-			if f.Smallest.Kind() == InternalKeyKindRangeDelete {
-				l.smallestBoundary = &f.Smallest
+			// If the boundary is a range deletion tombstone or a regular deletion
+			// tombstone at seqnum 0, return that key.
+			if f.Smallest.Kind() == InternalKeyKindRangeDelete ||
+				(f.Smallest.Kind() == InternalKeyKindDelete && f.Smallest.SeqNum() == 0) {
+				// The synthetic boundary key always has to have kind RANGEDEL because
+				// other keys are passed through mergingIter and will confuse the
+				// direction switching code in Iterator. Note that this can cause a
+				// small oddity in iteration. The previous table might have a largest
+				// key of x.SET.0 while this table is returning a smallest key of
+				// x.RANGEDEL.0 which is technically smaller than x.SET.0. This is ok
+				// because the seqnum 0 implies that there are no "x" keys at lower
+				// levels.
+				l.syntheticBoundary = f.Smallest
+				l.syntheticBoundary.SetKind(InternalKeyKindRangeDelete)
+				l.smallestBoundary = &l.syntheticBoundary
 				return l.smallestBoundary, nil
 			}
 		}
